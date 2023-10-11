@@ -495,7 +495,13 @@ def render_report(
 
 @timeline_fp.segment_selected
 def timeline_fp_segment_selected(segment):
-    print(segment)
-    print(timeline_fp.get_pointer())
     frame_n = timeline_fp.get_pointer()
+    timeline_fn.set_pointer(frame_n)
+    show_images(frame_n)
+
+
+@timeline_fn.segment_selected
+def timeline_fn_segment_selected(segment):
+    frame_n = timeline_fn.get_pointer()
+    timeline_fp.set_pointer(frame_n)
     show_images(frame_n)
