@@ -1,0 +1,6 @@
+.venv/
+.vscode/
+*.pyc
+local.env
+supervisely
+temp_data
