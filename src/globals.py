@@ -12,7 +12,7 @@ TEAM_ID = sly.env.team_id()
 WORKSPACE_ID = sly.env.workspace_id()
 PROJECT_ID = sly.env.project_id(raise_not_found=False)
 DATASET_ID = sly.env.dataset_id(raise_not_found=False)
-TEMP_DATA_PATH = "/tmp"
+TEMP_DATA_PATH = "/tmp/consensus-videos"
 if sly.is_development():
     TEMP_DATA_PATH = "temp_data"
 if not os.path.exists(TEMP_DATA_PATH):

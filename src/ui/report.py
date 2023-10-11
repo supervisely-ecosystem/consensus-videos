@@ -151,13 +151,13 @@ def show_images(frame_n):
         f"/static/gt.jpg?{time.time()}", gt_ann, title=left_name, column_index=0
     )
     report_per_image_images.append(
-        f"/static/pred.jpg?{time.time()}",
+        f"./static/pred.jpg?{time.time()}",
         pred_ann,
         title=right_name,
         column_index=1,
     )
     report_per_image_images.append(
-        f"/static/gt.jpg?{time.time()}", diff_ann, title="Difference", column_index=2
+        f"./static/gt.jpg?{time.time()}", diff_ann, title="Difference", column_index=2
     )
 
     DataJson().send_changes()
