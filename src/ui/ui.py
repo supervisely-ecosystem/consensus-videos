@@ -718,6 +718,7 @@ def select_project(project_id):
     select_dataset_to_compare.set([Select.Item(dataset.id, dataset.name) for dataset in datasets])
     if datasets:
         select_dataset_to_compare.set_value(datasets[0].id)
+        select_dataset(datasets[0].id)
 
     select_dataset_to_compare.loading = False
 
