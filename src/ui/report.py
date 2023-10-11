@@ -148,7 +148,7 @@ def show_images(frame_n):
     )
 
     report_per_image_images.append(
-        f"/static/gt.jpg?{time.time()}", gt_ann, title=left_name, column_index=0
+        f"./static/gt.jpg?{time.time()}", gt_ann, title=left_name, column_index=0
     )
     report_per_image_images.append(
         f"./static/pred.jpg?{time.time()}",
