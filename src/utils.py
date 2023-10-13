@@ -228,3 +228,13 @@ def unite_ranges(ranges: List[List[int]]):
         else:
             res.append(ranges[i])
     return res
+
+
+@timeit
+def download_frame(video_id, frame_n):
+    return g.api.video.frame.download_np(video_id, frame_n)
+
+
+@timeit
+def download_video(video_id, filename):
+    g.api.video.download_path(video_id, str(Path(g.TEMP_DATA_PATH).joinpath(filename)))
