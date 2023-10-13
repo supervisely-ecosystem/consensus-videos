@@ -1,6 +1,5 @@
 from pathlib import Path
 from typing import List
-import cv2
 from supervisely import (
     VideoAnnotation,
     KeyIdMap,
@@ -12,6 +11,7 @@ from supervisely import (
 from supervisely.api.video.video_api import VideoInfo
 from supervisely.imaging.color import rgb2hex
 from supervisely.decorators.profile import timeit
+from supervisely.imaging.image import write as write_image
 
 import src.globals as g
 
@@ -212,8 +212,9 @@ def get_dataset_by_name(project_id, dataset_name):
     return dataset
 
 
+@timeit
 def save_img(np, filename):
-    cv2.imwrite(str(Path(g.TEMP_DATA_PATH).joinpath(filename)), np)
+    write_image(str(Path(g.TEMP_DATA_PATH).joinpath(filename)), np)
 
 
 def unite_ranges(ranges: List[List[int]]):
