@@ -27,6 +27,7 @@ from supervisely.app.widgets import (
     SelectTagMeta,
     InputTag,
     Editor,
+    VideoThumbnail,
 )
 
 import src.globals as g
@@ -324,6 +325,7 @@ actions_delete_tag_inputs = Container(
         Field(title="Select Tag", content=actions_tag_inputs_tag_meta),
     ]
 )
+actions_lj_video_thumbnail = VideoThumbnail()
 actions_lj_inputs_name = Input()
 actions_lj_inputs_user_ids = Select(
     items=[Select.Item(user.id, user.login) for user in g.all_users.values()],
@@ -336,11 +338,12 @@ actions_lj_inputs_classes_to_label = Select(items=[], multiple=True, filterable=
 actions_lj_inputs_tags_to_label = Select(items=[], multiple=True, filterable=True)
 actions_labeling_job_inputs = Container(
     widgets=[
-        Text("<p>Create labeling job for images</p>"),
+        Text("<p>Create labeling job for video</p>"),
+        actions_lj_video_thumbnail,
         Field(title="Name", content=actions_lj_inputs_name),
         Field(
             title="Users",
-            description="Select at least 1 user. Labeling job will be created for each user. If images are from different datasets, a labeling job will created for each dataset.",
+            description="Select at least 1 user. Labeling job will be created for each user",
             content=actions_lj_inputs_user_ids,
         ),
         Field(title="Description", content=actions_lj_inputs_description),
@@ -699,27 +702,34 @@ def get_result_table_data_json(first_rows: List[Row], second_rows: List[Row], pa
     return {"columns": ["", *[row_to_str(row) for row in first_rows]], "data": data}
 
 
-def set_actions(project_meta: sly.ProjectMeta):
+def set_actions(comparison_result: ComparisonResult):
     actions_tag_inputs.loading = True
     tag_metas = [
         tm
-        for tm in project_meta.tag_metas
+        for tm in comparison_result.second_meta.tag_metas
         if tm.applicable_to in [sly.TagApplicableTo.OBJECTS_ONLY, sly.TagApplicableTo.ALL]
     ]
 
-    actions_tag_inputs_tag_meta.set_project_meta(project_meta.clone(tag_metas=tag_metas))
+    actions_tag_inputs_tag_meta.set_project_meta(
+        comparison_result.second_meta.clone(tag_metas=tag_metas)
+    )
     if tag_metas:
         actions_tag_inputs_tag_meta.set_name(tag_metas[0].name)
     actions_tag_inputs.loading = False
     actions_labeling_job_inputs.loading = True
+    actions_lj_video_thumbnail.set_video(comparison_result.second_video_info)
     actions_lj_inputs_classes_to_label.set(
         items=[
-            Select.Item(obj_class.name, obj_class.name) for obj_class in project_meta.obj_classes
+            Select.Item(obj_class.name, obj_class.name)
+            for obj_class in comparison_result.second_meta.obj_classes
         ]
     )
     actions_lj_inputs_classes_to_label.set_value([])
     actions_lj_inputs_tags_to_label.set(
-        items=[Select.Item(tag_meta.name, tag_meta.name) for tag_meta in project_meta.tag_metas]
+        items=[
+            Select.Item(tag_meta.name, tag_meta.name)
+            for tag_meta in comparison_result.second_meta.tag_metas
+        ]
     )
     actions_lj_inputs_tags_to_label.set_value([])
     actions_labeling_job_inputs.loading = False
@@ -1129,7 +1139,7 @@ def result_table_clicked(datapoint):
         second_name=column_name,
     )
 
-    set_actions(comparison_result.second_meta)
+    set_actions(comparison_result)
     update_images_count()
 
     consensus_report_text.show()
