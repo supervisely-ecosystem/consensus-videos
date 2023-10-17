@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import traceback
 import supervisely as sly
-from supervisely import VideoAnnotation, Frame
+from supervisely import VideoAnnotation
 from supervisely.api.video.video_api import VideoInfo
 from supervisely.app.widgets import (
     Text,
@@ -23,11 +23,11 @@ from supervisely.app.widgets import (
     InputNumber,
     Checkbox,
     OneOf,
-    SelectWorkspace,
     Input,
     SelectTagMeta,
     InputTag,
     Editor,
+    VideoThumbnail,
 )
 
 import src.globals as g
@@ -278,7 +278,17 @@ consensus_report_error_notification = NotificationBox(
 )
 consensus_report_error_notification.hide()
 result_table.hide()
-report_layout.hide()
+report_container = Container(
+    widgets=[
+        consensus_report_notification,
+        consensus_report_error_notification,
+        consensus_report_text,
+        consensus_report_details,
+        report_layout,
+    ]
+)
+report_container.hide()
+
 actions_select_which_images = Select(
     items=[
         Select.Item("below", "Below threshold"),
@@ -296,18 +306,26 @@ actions_select_metric = Select(
 )
 
 actions_tag_inputs_tag_meta = SelectTagMeta(project_meta=sly.ProjectMeta())
-actions_tag_inputs_tag_value = InputTag(tag_meta=sly.TagMeta("", value_type=sly.TagValueType.NONE))
+actions_tag_inputs_tag_value = InputTag(
+    tag_meta=sly.TagMeta("", value_type=sly.TagValueType.NONE), hide_switch=True
+)
 actions_tag_inputs = Container(
     widgets=[
-        Text("<p>Add or remove tag from frames</p>"),
+        Text("<p>Add tag to frames</p>"),
         Field(title="Select Tag", content=actions_tag_inputs_tag_meta),
         Field(
             title="Select Tag Value",
-            description="Disable tag to delete it",
             content=actions_tag_inputs_tag_value,
         ),
     ]
 )
+actions_delete_tag_inputs = Container(
+    widgets=[
+        Text("<p>Delete tag from frames</p>"),
+        Field(title="Select Tag", content=actions_tag_inputs_tag_meta),
+    ]
+)
+actions_lj_video_thumbnail = VideoThumbnail()
 actions_lj_inputs_name = Input()
 actions_lj_inputs_user_ids = Select(
     items=[Select.Item(user.id, user.login) for user in g.all_users.values()],
@@ -320,11 +338,12 @@ actions_lj_inputs_classes_to_label = Select(items=[], multiple=True, filterable=
 actions_lj_inputs_tags_to_label = Select(items=[], multiple=True, filterable=True)
 actions_labeling_job_inputs = Container(
     widgets=[
-        Text("<p>Create labeling job for images</p>"),
+        Text("<p>Create labeling job for video</p>"),
+        actions_lj_video_thumbnail,
         Field(title="Name", content=actions_lj_inputs_name),
         Field(
             title="Users",
-            description="Select at least 1 user. Labeling job will be created for each user. If images are from different datasets, a labeling job will created for each dataset.",
+            description="Select at least 1 user. Labeling job will be created for each user",
             content=actions_lj_inputs_user_ids,
         ),
         Field(title="Description", content=actions_lj_inputs_description),
@@ -336,6 +355,7 @@ actions_labeling_job_inputs = Container(
 actions_select_action = Select(
     items=[
         Select.Item("assign_tag", "Assign Tag", actions_tag_inputs),
+        Select.Item("delete_tag", "Delete Tag", actions_delete_tag_inputs),
         Select.Item("labeling_job", "Create Labeling Job", actions_labeling_job_inputs),
     ]
 )
@@ -479,31 +499,39 @@ def actions_assign_tag_func(
     progress,
 ):
     tag_meta = utils.get_project_meta(video_info.project_id).tag_metas.get(tag_meta.name)
-    if tag is None:
-        for ann_tag in ann.tags:
-            if ann_tag.meta.name == tag_meta.name:
-                resulting_frame_ranges = utils.unite_ranges(
-                    [
-                        [n, n]
-                        for n in range(ann_tag.frame_range[0], ann_tag.frame_range[1] + 1)
-                        if n not in frames
-                    ]
-                )
-                if len(resulting_frame_ranges) == 0:
-                    g.api.video.tag.remove(ann_tag)
-                else:
-                    g.api.video.tag.update_frame_range(ann_tag.sly_id, resulting_frame_ranges[0])
-                    for frame_range in resulting_frame_ranges[1:]:
-                        g.api.video.tag.add_tag(
-                            tag_meta.sly_id, video_info.id, ann_tag.value, frame_range
-                        )
-    else:
-        frame_ranges = utils.unite_ranges([[n, n] for n in frames])
-        for frame_range in frame_ranges:
-            g.api.video.tag.add_tag(tag_meta.sly_id, video_info.id, tag.value, frame_range)
-            progress.update(frame_range[1] - frame_range[0] + 1)
+    frame_ranges = utils.unite_ranges([[n, n] for n in frames])
+    for frame_range in frame_ranges:
+        g.api.video.tag.add_tag(tag_meta.sly_id, video_info.id, tag.value, frame_range)
+        progress.update(frame_range[1] - frame_range[0] + 1)
 
     return ann
+
+
+def actions_delete_tag_func(
+    tag_meta: sly.TagMeta,
+    frames: List[int],
+    ann: sly.VideoAnnotation,
+    video_info: VideoInfo,
+    progress,
+):
+    for ann_tag in ann.tags:
+        if ann_tag.meta.name == tag_meta.name:
+            resulting_frame_ranges = utils.unite_ranges(
+                [
+                    [n, n]
+                    for n in range(ann_tag.frame_range[0], ann_tag.frame_range[1] + 1)
+                    if n not in frames
+                ]
+            )
+            if len(resulting_frame_ranges) == 0:
+                g.api.video.tag.remove(ann_tag)
+            else:
+                g.api.video.tag.update_frame_range(ann_tag.sly_id, resulting_frame_ranges[0])
+                for frame_range in resulting_frame_ranges[1:]:
+                    g.api.video.tag.add_tag(
+                        tag_meta.sly_id, video_info.id, ann_tag.value, frame_range
+                    )
+    progress.update(len(frames))
 
 
 def get_lj_settings():
@@ -540,7 +568,6 @@ def actions_lj_func(
     tags_to_label,
     dataset_id,
     video_id: List[int],
-    progress: Progress,
 ):
     labeling_jobs = g.api.labeling_job.create(
         name=labeling_job_name,
@@ -587,18 +614,18 @@ def actions_run():
         if video_info is None:
             return
         if action == "assign_tag":
+            with actions_progress(
+                iterable=frames, message=f'Updating tag "{tag_meta.name}" in images...'
+            ) as pbar:
+                _ = actions_assign_tag_func(tag_meta, tag, frames, video_ann, video_info, pbar)
+            actions_total.text = f"Tag assigned to {len(frames)} frames"
+            actions_total.show()
+        elif action == "delete_tag":
             actions_progress.show()
             tag_meta, tag = get_tag_settings()
-
-            action_name = (
-                f'Removing tag "{tag_meta.name}" from images...'
-                if tag is None
-                else f'Updating tag "{tag_meta.name}" in images...'
-            )
-            with actions_progress(iterable=frames, message=action_name) as pbar:
-                _ = actions_assign_tag_func(tag_meta, tag, frames, video_ann, video_info, pbar)
-            action_name = "removed from" if tag is None else "assigned to"
-            actions_total.text = f"Tag {action_name} {len(frames)} frames"
+            with actions_progress(iterable=frames, message="Removing tag from images...") as pbar:
+                _ = actions_delete_tag_func(tag_meta, frames, video_ann, video_info, pbar)
+            actions_total.text = f"Tag removed from {len(frames)} frames"
             actions_total.show()
         elif action == "labeling_job":
             (
@@ -618,7 +645,6 @@ def actions_run():
                 tags_to_label=tags_to_label,
                 dataset_id=video_info.dataset_id,
                 video_id=video_info.id,
-                progress=actions_progress,
             )
             actions_total.text = (
                 f"Created {len(created_labeling_jobgs)} labeling jobs for {len(user_ids)} users"
@@ -638,6 +664,7 @@ def tag_meta_changed(tag_meta):
     if tag_meta is None:
         return
     actions_tag_inputs_tag_value.set_tag_meta(tag_meta)
+    actions_tag_inputs_tag_value.activate()
 
 
 def update_images_count(*args, **kwargs):
@@ -675,27 +702,34 @@ def get_result_table_data_json(first_rows: List[Row], second_rows: List[Row], pa
     return {"columns": ["", *[row_to_str(row) for row in first_rows]], "data": data}
 
 
-def set_actions(project_meta: sly.ProjectMeta):
+def set_actions(comparison_result: ComparisonResult):
     actions_tag_inputs.loading = True
     tag_metas = [
         tm
-        for tm in project_meta.tag_metas
+        for tm in comparison_result.second_meta.tag_metas
         if tm.applicable_to in [sly.TagApplicableTo.OBJECTS_ONLY, sly.TagApplicableTo.ALL]
     ]
 
-    actions_tag_inputs_tag_meta.set_project_meta(project_meta.clone(tag_metas=tag_metas))
+    actions_tag_inputs_tag_meta.set_project_meta(
+        comparison_result.second_meta.clone(tag_metas=tag_metas)
+    )
     if tag_metas:
         actions_tag_inputs_tag_meta.set_name(tag_metas[0].name)
     actions_tag_inputs.loading = False
     actions_labeling_job_inputs.loading = True
+    actions_lj_video_thumbnail.set_video(comparison_result.second_video_info)
     actions_lj_inputs_classes_to_label.set(
         items=[
-            Select.Item(obj_class.name, obj_class.name) for obj_class in project_meta.obj_classes
+            Select.Item(obj_class.name, obj_class.name)
+            for obj_class in comparison_result.second_meta.obj_classes
         ]
     )
     actions_lj_inputs_classes_to_label.set_value([])
     actions_lj_inputs_tags_to_label.set(
-        items=[Select.Item(tag_meta.name, tag_meta.name) for tag_meta in project_meta.tag_metas]
+        items=[
+            Select.Item(tag_meta.name, tag_meta.name)
+            for tag_meta in comparison_result.second_meta.tag_metas
+        ]
     )
     actions_lj_inputs_tags_to_label.set_value([])
     actions_labeling_job_inputs.loading = False
@@ -878,7 +912,7 @@ def compare_btn_clicked():
     global name_to_row
 
     result_table.hide()
-    report_layout.hide()
+    report_container.hide()
     report_progress_current_pair.show()
     report_calculation_progress.show()
 
@@ -1060,7 +1094,7 @@ def result_table_clicked(datapoint):
     consensus_report_error_notification.hide()
     report_layout.loading = True
     consensus_report_details.loading = True
-    report_layout.show()
+    report_container.show()
     consensus_report_details.show()
 
     selected_pair_first.set(
@@ -1105,7 +1139,7 @@ def result_table_clicked(datapoint):
         second_name=column_name,
     )
 
-    set_actions(comparison_result.second_meta)
+    set_actions(comparison_result)
     update_images_count()
 
     consensus_report_text.show()
@@ -1185,7 +1219,7 @@ layout = Container(
         ),
         Card(
             title="4️⃣ Compare Results",
-            description="Click on 'CALCULATE CONSENSUS' button to see comparison matrix. Value in a table cell is a consensus score between two users",
+            description="Click on 'CALCULATE CONSENSUS' button to see comparison matrix. Value in a table cell is a consensus score for the pair",
             content=Container(
                 widgets=[
                     report_progress_current_pair,
@@ -1194,11 +1228,7 @@ layout = Container(
                 ]
             ),
         ),
+        report_container,
         actions_card,
-        consensus_report_notification,
-        consensus_report_error_notification,
-        consensus_report_text,
-        consensus_report_details,
-        report_layout,
     ]
 )
