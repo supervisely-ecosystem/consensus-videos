@@ -12,7 +12,7 @@
         "visualization stats",
         "collaboration"
     ],
-    "docker_image": "supervisely/collaboration:6.72.122",
+    "docker_image": "supervisely/collaboration:6.72.155",
     "context_menu": {
         "target": [
             "videos_project",
