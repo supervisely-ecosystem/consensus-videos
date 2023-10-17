@@ -35,19 +35,19 @@ Once the app is started, a new task appear in workspace tasks. Wait for the mess
 
 You can select multiple annotators and datasets. You can see added annotations in the table to the right. To remove an annotation from comparison, select it in the table and press the `Remove` button.
 
-<p align="center"><img src="https://github.com/supervisely-ecosystem/consensus/assets/61844772/20b9def0-5f1b-4871-917d-bbcea5c9e40e" /></p>
+<p align="center"><img src="https://github-production-user-asset-6210df.s3.amazonaws.com/61844772/275928946-81dfae50-5c51-4b2a-8ff7-7a074adf6e93.png" /></p>
 
 **Step 5:** Run the comparison.
 
 Press the `Calculate consensus` button to start the comparison. The comparison may take a long time, depending on the number of images and annotations. After the calculation is finished, you will see the results in the comparison matrix.
 
-<p align="center"><img src="https://github.com/supervisely-ecosystem/consensus/assets/61844772/0020ad34-a1d6-4414-acb8-50af3caa6a71" /></p>
+<p align="center"><img src="https://github-production-user-asset-6210df.s3.amazonaws.com/61844772/275929739-f7cb7797-5ef9-4dad-8a45-7156259e51cb.png" /></p>
 
 **Step 6:** View the detailed report.
 
 Click on a cell of the comparison matrix with a score to see a detailed report for the given pair of annotations.
 
-<p align="center"><img src="https://github.com/supervisely-ecosystem/consensus/assets/61844772/c15e131b-9154-45f9-a11c-5a5381497d51" /></p>
+<p align="center"><img src="https://github-production-user-asset-6210df.s3.amazonaws.com/61844772/275929878-ff900b3c-c6d0-43ad-817c-0d4b525def49.png" /></p>
 
 # What Report metrics mean
 
