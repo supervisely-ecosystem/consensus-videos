@@ -1,5 +1,5 @@
 <div align="center" markdown>
-<img src="https://github.com/supervisely-ecosystem/consensus/assets/61844772/8132fd69-23a8-4407-8316-48d21430717e"/> 
+<img src="https://github.com/supervisely-ecosystem/consensus-videos/assets/115161827/12273aba-e34e-47ff-8825-5c21c8aae903"/> 
 
 # Labeling Consensus for Videos
   
