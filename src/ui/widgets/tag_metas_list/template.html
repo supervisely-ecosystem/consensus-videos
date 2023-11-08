@@ -1,0 +1,70 @@
+<link rel="stylesheet" href="./sly/css/app/widgets/tag_meta_view/style.css" />
+
+<div v-show="data.{{{widget.widget_id}}}.tag_metas.length == 0">
+	<span>No Tag Metas</span>
+</div>
+<div 
+    v-show="data.{{{widget.widget_id}}}.tag_metas.length != 0"
+>
+    {% if widget._multiple %}
+	<div>
+		<span style="margin-right: 10px">{{{widget._select_all_btn}}}</span>
+		<span style="margin-right: 10px">{{{widget._deselect_all_btn}}}</span>
+	</div>
+	{% endif %}
+    <div
+        {% if widget._max_height %}
+            style="width: 30%; max-height: {{{widget._max_height}}}; overflow-y: auto;"
+        {% else %}
+            style="width: 30%;"
+        {% endif %}
+    >
+        <div
+            class="fflex"
+            v-for="(tag_meta, idx) in data.{{{widget.widget_id}}}.tag_metas"
+        >
+            <el-checkbox
+                v-model="state.{{{widget.widget_id}}}.selected[idx]"
+                style="margin-right: 10px"
+                {% if not widget._multiple %}
+                @change="if ($event.target.checked) {state.{{{widget.widget_id}}}.selected = state.{{{widget.widget_id}}}.selected.map((_, i) => i == idx);}"
+                {% endif %}
+            >
+            </el-checkbox>
+            <div>
+                <span class="icon-text-line fflex">
+                    <i
+                        class="zmdi zmdi-label"
+                        style="margin-right: 5px"
+                        :style="{color: tag_meta.color}"
+                    ></i>
+                    {% if widget._limit_long_names %}
+                        <span
+                            style="
+                                overflow: hidden;
+                                text-overflow: ellipsis;
+                                max-width: 120px;
+                                flex: 0 1 auto;
+                            "
+                            >{{tag_meta.name}}
+                        </span>
+                    {% else %}
+                        <span>{{tag_meta.name}} </span>
+                    {% endif %}
+                    {% if widget._show_type_text %}
+                        <span
+                            style="
+                                margin-left: 5px;
+                                font-size: 12px;
+                                color: #8492a6;
+                                line-height: initial;
+                            "
+                        >
+                            {{tag_meta.value_type.toUpperCase()}}
+                        </span>
+                    {% endif %}
+                </span>
+            </div>
+        </div>
+    </div>
+</div>

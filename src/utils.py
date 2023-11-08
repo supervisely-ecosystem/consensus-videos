@@ -154,12 +154,19 @@ def get_classes(video_ann: VideoAnnotation):
 
 
 @timeit
-def get_class_matches(first_classes, second_classes):
-    return {class_name: class_name for class_name in first_classes.intersection(second_classes)}
+def get_class_matches(first_classes, second_classes, classes_whitelist=None):
+    matches = {class_name: class_name for class_name in first_classes.intersection(second_classes)}
+    if classes_whitelist:
+        matches = {
+            k: v for k, v in matches.items() if k in classes_whitelist and v in classes_whitelist
+        }
+    return matches
 
 
 @timeit
-def get_tags_whitelists(first_video_ann: VideoAnnotation, second_video_ann: VideoAnnotation):
+def get_tags_whitelists(
+    first_video_ann: VideoAnnotation, second_video_ann: VideoAnnotation, whitelist=None
+):
     first_tag_whitelist = set()
     first_obj_tags_whitelist = set()
     for tag in first_video_ann.tags:
@@ -175,9 +182,14 @@ def get_tags_whitelists(first_video_ann: VideoAnnotation, second_video_ann: Vide
         for tag in obj.tags:
             second_obj_tags_whitelist.add(tag.name)
 
-    tags_whitelist = list(first_tag_whitelist.intersection(second_tag_whitelist))
+    tags_whitelist = first_tag_whitelist.intersection(second_tag_whitelist)
     obj_tags_whitelist = list(first_obj_tags_whitelist.intersection(second_obj_tags_whitelist))
-    return tags_whitelist, obj_tags_whitelist
+    if whitelist:
+        whitelist = set(whitelist)
+        obj_tags_whitelist = list(set(obj_tags_whitelist).intersection(whitelist))
+        tags_whitelist = tags_whitelist.intersection(whitelist)
+
+    return list(tags_whitelist), list(obj_tags_whitelist)
 
 
 def get_project_by_id(project_id):

@@ -38,6 +38,7 @@ from src.ui.report import (
     report_to_dict,
 )
 from src.metrics import calculate_exam_report
+from src.ui.widgets import ClassesList, TagMetasList
 
 
 COMPARE_TABLE_COLUMNS = [
@@ -228,6 +229,8 @@ compare_table = RadioTable(columns=COMPARE_TABLE_COLUMNS, rows=[])
 pop_row_btn = Button("remove", button_size="small")
 compare_btn = Button("calculate consensus")
 threshold_input = InputNumber(value=0.5, min=0, max=1, controls=False)
+tags_whitelist_widget = TagMetasList(multiple=True, max_height="135px")
+classes_whitelist_widget = ClassesList(multiple=True, max_height="135px")
 segmentation_mode_checkbox = Checkbox("Enable")
 report_progress_current_pair_first = Text()
 report_progress_current_pair_second = Text()
@@ -879,6 +882,22 @@ def add_to_compare_btn_clicked():
             user_login=user_login,
         )
 
+    obj_classes = []
+    oc_added = set()
+    tag_metas = []
+    tm_added = set()
+    for row in compare_table.rows:
+        row_project_id = row[2]
+        project_meta = g.project_metas[row_project_id]
+        obj_classes.extend([oc for oc in project_meta.obj_classes if oc.name not in oc_added])
+        oc_added.update([oc.name for oc in project_meta.obj_classes])
+        tag_metas.extend([tm for tm in project_meta.tag_metas if tm.name not in tm_added])
+        tm_added.update([tm.name for tm in project_meta.tag_metas])
+    classes_whitelist_widget.set(obj_classes)
+    classes_whitelist_widget.select_all()
+    tags_whitelist_widget.set(tag_metas)
+    tags_whitelist_widget.select_all()
+
 
 @pop_row_btn.click
 def pop_row_btn_clicked():
@@ -890,6 +909,21 @@ def pop_row_btn_clicked():
         rows=data["raw_rows_data"],
         subtitles=compare_table.subtitles,
     )
+    obj_classes = []
+    oc_added = set()
+    tag_metas = []
+    tm_added = set()
+    for row in compare_table.rows:
+        row_project_id = row[2]
+        project_meta = g.project_metas[row_project_id]
+        obj_classes.extend([oc for oc in project_meta.obj_classes if oc.name not in oc_added])
+        oc_added.update([oc.name for oc in project_meta.obj_classes])
+        tag_metas.extend([tm for tm in project_meta.tag_metas if tm.name not in tm_added])
+        tm_added.update([tm.name for tm in project_meta.tag_metas])
+    classes_whitelist_widget.set(obj_classes)
+    classes_whitelist_widget.select_all()
+    tags_whitelist_widget.set(tag_metas)
+    tags_whitelist_widget.select_all()
 
 
 @compare_btn.click
@@ -921,6 +955,8 @@ def compare_btn_clicked():
 
     rows_pairs = [(rows[i], rows[j]) for i in range(len(rows)) for j in range(i + 1, len(rows))]
     threshold = threshold_input.get_value()
+    tags_whitelist = [tm.name for tm in tags_whitelist_widget.get_selected_tag_metas()]
+    classes_whitelist = [oc.name for oc in classes_whitelist_widget.get_selected_classes()]
     segmentation_mode = segmentation_mode_checkbox.is_checked()
     pair_scores = {}
 
@@ -955,12 +991,14 @@ def compare_btn_clicked():
                 # 4. get classes whitelist
                 first_classes = utils.get_classes(first_video_ann)
                 second_classes = utils.get_classes(second_video_ann)
-                class_matches = utils.get_class_matches(first_classes, second_classes)
+                class_matches = utils.get_class_matches(
+                    first_classes, second_classes, classes_whitelist
+                )
                 pbar.update(15)
 
                 # 5. get tags whitelists
                 tags_whitelist, obj_tags_whitelist = utils.get_tags_whitelists(
-                    first_video_ann, second_video_ann
+                    first_video_ann, second_video_ann, tags_whitelist
                 )
                 pbar.update(15)
 
@@ -1212,6 +1250,16 @@ layout = Container(
                         title="IoU threshold",
                         description="Is used to match objects. IoU - Intersection over Union.",
                         content=threshold_input,
+                    ),
+                    Field(
+                        title="Tags whitelist",
+                        description="Select tags that will be used for report calculation",
+                        content=tags_whitelist_widget,
+                    ),
+                    Field(
+                        title="Classes whitelis",
+                        description="Select classes that will be used for report calculation",
+                        content=classes_whitelist_widget,
                     ),
                     compare_btn,
                 ]
