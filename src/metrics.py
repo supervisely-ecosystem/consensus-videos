@@ -110,6 +110,8 @@ class ComputeMetricsReq:
         obj_tags_whitelist: List[str],
         iou_threshold: float,
         segmentation_mode: bool,
+        frame_from: Optional[int] = None,
+        frame_to: Optional[int] = None,
     ) -> None:
         self.gt_video_info = gt_video_info
         self.pred_video_info = pred_video_info
@@ -120,6 +122,8 @@ class ComputeMetricsReq:
         self.obj_tags_whitelist = obj_tags_whitelist
         self.iou_threshold = iou_threshold
         self.segmentation_mode = segmentation_mode
+        self.frame_from = frame_from
+        self.frame_to = frame_to
 
 
 class ComputeMetricsResult:
@@ -297,6 +301,8 @@ def compute_metrics(
     pred_video_ann = request.pred_video_ann
     class_mapping = request.class_mapping
     segmentation_mode = request.segmentation_mode
+    frame_from = request.frame_from
+    frame_to = request.frame_to
     difference_geometries = []
     try:
         frame_count = gt_video_info.frames_count
@@ -320,7 +326,11 @@ def compute_metrics(
         total_pixel_error = 0
         total_pixels = 0
 
-        for frame_n in range(1, gt_video_info.frames_count + 1):
+        if frame_from is None:
+            frame_from = 1
+        if frame_to is None:
+            frame_to = frame_count + 1
+        for frame_n in range(frame_from, frame_to + 1):
             image_class_counters = {class_gt: _make_counters() for class_gt in class_mapping}
             image_pixel_counters = {class_gt: _make_pixel_counters() for class_gt in class_mapping}
             image_tag_counters = {tag_name: _make_counters() for tag_name in tag_counters}
@@ -339,9 +349,11 @@ def compute_metrics(
             )
             frame_errors_canvas = np.zeros(video_shape, dtype=np.bool)
 
-            gt_frame_figures = [fig for fig in gt_video_ann.figures if fig.frame_index == frame_n]
+            gt_frame_figures = [
+                fig for fig in gt_video_ann.figures if fig.frame_index + 1 == frame_n
+            ]
             pred_frame_figures = [
-                fig for fig in pred_video_ann.figures if fig.frame_index == frame_n
+                fig for fig in pred_video_ann.figures if fig.frame_index + 1 == frame_n
             ]
 
             # non segmentation labels
@@ -765,6 +777,8 @@ def calculate_exam_report(
     iou_threshold: float,
     progress: Optional[CustomTqdm] = None,
     segmentation_mode: Optional[bool] = True,
+    frame_from: Optional[int] = None,
+    frame_to: Optional[int] = None,
 ) -> Tuple[List, List[Bitmap]]:
     request = ComputeMetricsReq(
         gt_video_info=gt_video_info,
@@ -776,6 +790,8 @@ def calculate_exam_report(
         obj_tags_whitelist=obj_tags_whitelist,
         iou_threshold=iou_threshold,
         segmentation_mode=segmentation_mode,
+        frame_from=frame_from,
+        frame_to=frame_to,
     )
     result, diff_bitmaps = compute_metrics(request, progress)
     return result.to_json(), diff_bitmaps

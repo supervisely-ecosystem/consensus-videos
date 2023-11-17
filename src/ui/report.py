@@ -23,6 +23,7 @@ import src.utils as utils
 
 GOOD_TIMELINE_COLOR = "#91B974"
 ERROR_TIMELINE_COLOR = "#FF6458"
+EMPTY_TIMELINE_COLOR = "#d1dbe5"
 
 
 gt_video_info = None
@@ -33,6 +34,7 @@ differences = []
 left_name = ""
 right_name = ""
 current_report = None
+current_frame_range = [1, 1]
 
 overall_score = Text("")
 overall_stats = Card(title="Overall Score", content=overall_score)
@@ -84,6 +86,7 @@ report_per_image_table_columns = [
     "Overall Score",
 ]
 report_per_image_table = Table(columns=report_per_image_table_columns)
+report_per_image_table.click(lambda x: x)
 timeline = Timeline(1, [], [])
 timeline_select_frame = InputNumber(min=1, max=1, value=1)
 timeline_filters_widgets = {
@@ -91,14 +94,14 @@ timeline_filters_widgets = {
         "switch": Switch(),
         "input": InputNumber(min=0, max=100, value=80, step=0.1, precision=1),
     },
-    "objects_fp": {"switch": Switch(), "input": InputNumber(min=0)},
-    "objects_fn": {"switch": Switch(), "input": InputNumber(min=0)},
+    "objects_fp": {"switch": Switch(), "input": InputNumber(min=0, value=0)},
+    "objects_fn": {"switch": Switch(), "input": InputNumber(min=0, value=0)},
     "tags_score": {
         "switch": Switch(),
         "input": InputNumber(min=0, max=100, value=80, step=0.1, precision=1),
     },
-    "tags_fp": {"switch": Switch(), "input": InputNumber(min=0)},
-    "tags_fn": {"switch": Switch(), "input": InputNumber(min=0)},
+    "tags_fp": {"switch": Switch(), "input": InputNumber(min=0, value=0)},
+    "tags_fn": {"switch": Switch(), "input": InputNumber(min=0, value=0)},
     "geometry_score": {
         "switch": Switch(),
         "input": InputNumber(min=0, max=100, value=80, step=0.1, precision=1),
@@ -115,6 +118,7 @@ timeline_filters = Flexbox(
             [
                 Field(
                     title="Objects score",
+                    description="If frame Objects Score is less than this value, it will be marked as error",
                     content=Flexbox(
                         widgets=[
                             timeline_filters_widgets["objects_score"]["switch"],
@@ -123,16 +127,8 @@ timeline_filters = Flexbox(
                     ),
                 ),
                 Field(
-                    title="Objects FP",
-                    content=Flexbox(
-                        widgets=[
-                            timeline_filters_widgets["objects_fp"]["switch"],
-                            timeline_filters_widgets["objects_fp"]["input"],
-                        ]
-                    ),
-                ),
-                Field(
                     title="Objects FN",
+                    description="If Missing Objects number is more than this value, it will be marked as error",
                     content=Flexbox(
                         widgets=[
                             timeline_filters_widgets["objects_fn"]["switch"],
@@ -140,13 +136,23 @@ timeline_filters = Flexbox(
                         ]
                     ),
                 ),
-                # timeline_filters_apply_btn,
+                Field(
+                    title="Objects FP",
+                    description="If False Positive Objects number is more than this value, it will be marked as error",
+                    content=Flexbox(
+                        widgets=[
+                            timeline_filters_widgets["objects_fp"]["switch"],
+                            timeline_filters_widgets["objects_fp"]["input"],
+                        ]
+                    ),
+                ),
             ]
         ),
         Container(
             [
                 Field(
                     title="Tags score",
+                    description="If frame Tags Score is less than this value, it will be marked as error",
                     content=Flexbox(
                         widgets=[
                             timeline_filters_widgets["tags_score"]["switch"],
@@ -156,6 +162,7 @@ timeline_filters = Flexbox(
                 ),
                 Field(
                     title="Tags FP",
+                    description="If Missing Tags number is more than this value, it will be marked as error",
                     content=Flexbox(
                         widgets=[
                             timeline_filters_widgets["tags_fp"]["switch"],
@@ -165,6 +172,7 @@ timeline_filters = Flexbox(
                 ),
                 Field(
                     title="Tags FN",
+                    description="If False Positive Tags number is more than this value, it will be marked as error",
                     content=Flexbox(
                         widgets=[
                             timeline_filters_widgets["tags_fn"]["switch"],
@@ -178,6 +186,7 @@ timeline_filters = Flexbox(
             [
                 Field(
                     title="Geometry score",
+                    description="If frame Geometry Score is less than this value, it will be marked as error",
                     content=Flexbox(
                         widgets=[
                             timeline_filters_widgets["geometry_score"]["switch"],
@@ -187,6 +196,7 @@ timeline_filters = Flexbox(
                 ),
                 Field(
                     title="Overall score",
+                    description="If frame Overall Score is less than this value, it will be marked as error",
                     content=Flexbox(
                         widgets=[
                             timeline_filters_widgets["overall_score"]["switch"],
@@ -202,9 +212,17 @@ timeline_filters = Flexbox(
 
 
 @timeline_select_frame.value_changed
-def timeline_select_frame_cb(value):
-    timeline.set_pointer(value)
-    show_images(value)
+def timeline_select_frame_cb(frame_n):
+    global current_frame_range
+    pointer = frame_n - current_frame_range[0]
+    timeline.set_pointer(pointer)
+    report_per_image_table.read_json(
+        {
+            "columns": report_per_image_table_columns,
+            "data": [get_report_per_image_row(report_to_dict(current_report), frame_n)],
+        }
+    )
+    show_images(frame_n)
 
 
 def get_timeline_filters():
@@ -255,12 +273,12 @@ def show_images(frame_n):
     report_per_image_images.clean_up()
 
     # gt image
-    frame_np = utils.download_frame(gt_video_info.id, frame_n)
+    frame_np = utils.download_frame(gt_video_info.id, frame_n - 1)
     utils.save_img(frame_np, "gt.jpg")
 
     # pred image
     if pred_video_info.id != gt_video_info.id:
-        frame_np = utils.download_frame(pred_video_info.id, frame_n)
+        frame_np = utils.download_frame(pred_video_info.id, frame_n - 1)
     utils.save_img(frame_np, "pred.jpg")
 
     # gt annotation
@@ -286,7 +304,7 @@ def show_images(frame_n):
     try:
         labels = [
             sly.Label(
-                differences[frame_n],
+                differences[frame_n - current_frame_range[0]],
                 sly.ObjClass("difference", sly.Bitmap, (255, 0, 0)),
             )
         ]
@@ -322,7 +340,7 @@ report_per_image = Card(
         widgets=[
             Field(
                 title="Timeline filters",
-                description="Select metrics thresholds to display error frames on the timeline",
+                description="Select metrics thresholds to display error frames on the timeline. Grey means there are no annotations on both frames for selected metrics",
                 content=timeline_filters,
             ),
             Field(
@@ -530,43 +548,61 @@ def clean_up():
     overall_score.set("-", status="text")
 
 
-def get_intervals_with_colors(report: dict, filters: dict = None):
-    error = []
-    good = []
-
-    def is_good(frame_n):
+def get_intervals_with_colors(report: dict, filters: dict = None, frame_range=[1, 1]):
+    def get_color(frame_n):
         values = get_report_per_image_row_values(report, frame_n)
-        if filters["objects_score"] is not None and values[0] < filters["objects_score"]:
-            return False
-        if filters["objects_fn"] is not None and values[1] > filters["objects_fn"]:
-            return False
-        if filters["objects_fp"] is not None and values[2] > filters["objects_fp"]:
-            return False
-        if filters["tags_score"] is not None and values[3] < filters["tags_score"]:
-            return False
-        if filters["tags_fn"] is not None and values[4] > filters["tags_fn"]:
-            return False
-        if filters["tags_fp"] is not None and values[5] > filters["tags_fp"]:
-            return False
-        if filters["geometry_score"] is not None and values[6] < filters["geometry_score"]:
-            return False
-        if filters["overall_score"] is not None and values[7] < filters["overall_score"]:
-            return False
-        return True
+        current_color = EMPTY_TIMELINE_COLOR
+        if any(
+            filters[filter_name] is not None
+            for filter_name in ("objects_score", "objects_fn", "objects_fp")
+        ):
+            if any(values[0:3]):
+                if filters["objects_score"] is not None and values[0] < filters["objects_score"]:
+                    return ERROR_TIMELINE_COLOR
+                if filters["objects_fn"] is not None and values[1] > filters["objects_fn"]:
+                    return ERROR_TIMELINE_COLOR
+                if filters["objects_fp"] is not None and values[2] > filters["objects_fp"]:
+                    return ERROR_TIMELINE_COLOR
+                current_color = GOOD_TIMELINE_COLOR
+        if any(
+            filters[filter_name] is not None for filter_name in ("tags_score", "tags_fn", "tags_fp")
+        ):
+            if any(values[3:6]):
+                if filters["tags_score"] is not None and values[3] < filters["tags_score"]:
+                    return ERROR_TIMELINE_COLOR
+                if filters["tags_fn"] is not None and values[4] > filters["tags_fn"]:
+                    return ERROR_TIMELINE_COLOR
+                if filters["tags_fp"] is not None and values[5] > filters["tags_fp"]:
+                    return ERROR_TIMELINE_COLOR
+                current_color = GOOD_TIMELINE_COLOR
+        if filters["geometry_score"] is not None:
+            if any(v != 0 for v in values[0:3]):
+                if values[6] < filters["geometry_score"]:
+                    return ERROR_TIMELINE_COLOR
+                current_color = GOOD_TIMELINE_COLOR
+        if filters["overall_score"] is not None:
+            if any(v != 0 for v in values[0:7]):
+                if values[7] < filters["overall_score"]:
+                    return ERROR_TIMELINE_COLOR
+                current_color = GOOD_TIMELINE_COLOR
 
-    for frame_n in range(1, gt_video_info.frames_count + 1):
-        if is_good(frame_n):
-            good.append([frame_n, frame_n])
-        else:
-            error.append([frame_n, frame_n])
-    error = utils.unite_ranges(error)
-    good = utils.unite_ranges(good)
+        return current_color
+
+    colors = {
+        ERROR_TIMELINE_COLOR: [],
+        GOOD_TIMELINE_COLOR: [],
+        EMPTY_TIMELINE_COLOR: [],
+    }
+    for frame_n in range(frame_range[0], frame_range[1] + 1):
+        color = get_color(frame_n)
+        colors[color].append([frame_n - frame_range[0], frame_n - frame_range[0]])
+
+    for color, ranges in colors.items():
+        united_ranges = utils.unite_ranges(ranges)
+        colors[color] = united_ranges
     return (
-        [*error, *good],
-        [
-            *[ERROR_TIMELINE_COLOR for _ in range(len(error))],
-            *[GOOD_TIMELINE_COLOR for _ in range(len(good))],
-        ],
+        [range for color, ranges in colors.items() for range in ranges],
+        [color for color, ranges in colors.items() for range in ranges],
     )
 
 
@@ -582,6 +618,7 @@ def render_report(
     tags,
     first_name,
     second_name,
+    frame_range,
 ):
     results.loading = True
 
@@ -593,6 +630,7 @@ def render_report(
     global left_name
     global right_name
     global current_report
+    global current_frame_range
 
     gt_video_info = gt_video
     pred_video_info = pred_video
@@ -601,6 +639,7 @@ def render_report(
     differences = diffs
     left_name = first_name
     right_name = second_name
+    current_frame_range = frame_range
 
     current_report = copy.deepcopy(report)
     report = report_to_dict(report)
@@ -652,7 +691,9 @@ def render_report(
     )
 
     # set timeline
-    timeline_select_frame.max = gt_video_info.frames_count
+    timeline_select_frame.min = current_frame_range[0]
+    timeline_select_frame.max = current_frame_range[1]
+    timeline_select_frame.value = timeline_select_frame.min
     apply_timeline_filters()
 
     results.loading = False
@@ -662,22 +703,25 @@ def render_report(
 def timeline_click_cb(pointer):
     global current_report
     global report_per_image_table
-    timeline_select_frame.value = pointer
+    global current_frame_range
+    frame_n = pointer + current_frame_range[0]
+    timeline_select_frame.value = frame_n
     report_per_image_table.read_json(
         {
             "columns": report_per_image_table_columns,
-            "data": [get_report_per_image_row(report_to_dict(current_report), pointer)],
+            "data": [get_report_per_image_row(report_to_dict(current_report), frame_n)],
         }
     )
-    show_images(pointer)
+    show_images(frame_n)
 
 
 def apply_timeline_filters(*args):
     global gt_video_info
+    global current_frame_range
     filters = get_timeline_filters()
     report = report_to_dict(current_report)
-    intervals, colors = get_intervals_with_colors(report, filters)
-    timeline.set(gt_video_info.frames_count, intervals, colors)
+    intervals, colors = get_intervals_with_colors(report, filters, current_frame_range)
+    timeline.set(current_frame_range[1] - current_frame_range[0] + 1, intervals, colors)
 
 
 for filter_metric_widget in timeline_filters_widgets.values():

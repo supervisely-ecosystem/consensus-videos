@@ -88,6 +88,7 @@ class ComparisonResult:
         second_classes,
         report,
         differences,
+        frame_range,
     ):
         first_name = ", ".join(str(p) for p in pair[0][2:])
         second_name = ", ".join(str(p) for p in pair[1][2:])
@@ -105,6 +106,7 @@ class ComparisonResult:
         self.second_classes = second_classes
         self._report_path = self.save_report(report)
         self._differences_path = self.save_differences(differences)
+        self.frame_range = frame_range
         try:
             self.error_message = report["error"]
         except (KeyError, TypeError):
@@ -229,6 +231,22 @@ compare_table = RadioTable(columns=COMPARE_TABLE_COLUMNS, rows=[])
 pop_row_btn = Button("remove", button_size="small")
 compare_btn = Button("calculate consensus")
 threshold_input = InputNumber(value=0.5, min=0, max=1, controls=False)
+frame_range_from = InputNumber(value=1, min=1, max=1)
+frame_range_from_field = Field(
+    title="Frame from",
+    description="Select frame number to limit consensus calculation from this frame",
+    content=frame_range_from,
+)
+frame_range_from_checkbox = Checkbox(frame_range_from_field, checked=False)
+frame_range_to = InputNumber(value=1, min=1, max=1)
+frame_range_to_field = Field(
+    title="Frame to",
+    description="Select frame number to limit consensus calculation to this frame",
+    content=frame_range_to,
+)
+frame_range_to_checkbox = Checkbox(frame_range_to_field, checked=False)
+
+frame_ranges = Flexbox(widgets=[frame_range_from_checkbox, frame_range_to_checkbox])
 tags_whitelist_widget = TagMetasList(multiple=True, max_height="135px")
 classes_whitelist_widget = ClassesList(multiple=True, max_height="135px")
 segmentation_mode_checkbox = Checkbox("Enable")
@@ -283,8 +301,6 @@ consensus_report_error_notification.hide()
 result_table.hide()
 report_container = Container(
     widgets=[
-        consensus_report_notification,
-        consensus_report_error_notification,
         consensus_report_text,
         consensus_report_details,
         report_layout,
@@ -392,7 +408,7 @@ actions_select_images_container = Container(
 )
 actions_card = Card(
     title="5️⃣ Actions",
-    description="Perform different actions with images",
+    description="Perform different actions with frames",
     content=Container(
         widgets=[
             Field(title="Action", content=actions_select_action),
@@ -413,6 +429,20 @@ pairs_comparisons_results = {}
 name_to_row = {}
 
 
+@frame_range_from.value_changed
+def frame_range_from_changed(value):
+    frame_range_to.min = value
+    if frame_range_to.value < value:
+        frame_range_to.value = value
+
+
+@frame_range_to.value_changed
+def frame_range_to_changed(value):
+    frame_range_from.max = value
+    if frame_range_from.value > value:
+        frame_range_from.value = value
+
+
 def count_frames_for_actions(metric, passmark, result):
     global name_to_row
     cell_data = result_table.get_selected_cell(sly.app.StateJson())
@@ -427,9 +457,7 @@ def count_frames_for_actions(metric, passmark, result):
     comparison_result: ComparisonResult
     if comparison_result.error_message is not None:
         return 0
-    frames_count = comparison_result.first_video_info.frames_count
-    if frames_count != comparison_result.second_video_info.frames_count:
-        return 0
+    frame_range = comparison_result.frame_range
     report = comparison_result.get_report()
     report_dict = report_to_dict(report)
     if result == "above":
@@ -437,7 +465,7 @@ def count_frames_for_actions(metric, passmark, result):
     else:
         comparator = lambda x: x < passmark
     count = 0
-    for frame_n in range(1, frames_count + 1):
+    for frame_n in range(frame_range[0], frame_range[1] + 1):
         try:
             metric_value = report_dict[metric][frame_n][("", "")]
         except KeyError:
@@ -459,9 +487,7 @@ def get_frames_for_actions(metric, passmark, result):
     comparison_result: ComparisonResult
     if comparison_result.error_message is not None:
         return []
-    frames_count = comparison_result.first_video_info.frames_count
-    if frames_count != comparison_result.second_video_info.frames_count:
-        return []
+    frame_range = comparison_result.frame_range
     report = comparison_result.get_report()
     report_dict = report_to_dict(report)
     if result == "above":
@@ -469,7 +495,7 @@ def get_frames_for_actions(metric, passmark, result):
     else:
         comparator = lambda x: x < passmark
     res = []
-    for frame_n in range(1, frames_count + 1):
+    for frame_n in range(frame_range[0], frame_range[1] + 1):
         try:
             metric_value = report_dict[metric][frame_n][("", "")]
         except KeyError:
@@ -617,6 +643,8 @@ def actions_run():
         if video_info is None:
             return
         if action == "assign_tag":
+            actions_progress.show()
+            tag_meta, tag = get_tag_settings()
             with actions_progress(
                 iterable=frames, message=f'Updating tag "{tag_meta.name}" in images...'
             ) as pbar:
@@ -860,7 +888,8 @@ def add_to_compare_btn_clicked():
     video_id = select_video_to_compare.get_value()
     if video_id is None:
         return
-    video_name = utils.get_video(video_id).name
+    video_info = utils.get_video(video_id)
+    video_name = video_info.name
     user_login = select_user_to_compare.get_value()
     if user_login is None:
         return
@@ -898,6 +927,12 @@ def add_to_compare_btn_clicked():
     tags_whitelist_widget.set(tag_metas)
     tags_whitelist_widget.select_all()
 
+    prev_max = frame_range_to.max
+    frame_range_to.max = max(frame_range_to.max, video_info.frames_count)
+    if prev_max == frame_range_to.value:
+        frame_range_to.value = frame_range_to.max
+    frame_range_from.max = max(frame_range_from.max, video_info.frames_count - 1)
+
 
 @pop_row_btn.click
 def pop_row_btn_clicked():
@@ -924,6 +959,15 @@ def pop_row_btn_clicked():
     classes_whitelist_widget.select_all()
     tags_whitelist_widget.set(tag_metas)
     tags_whitelist_widget.select_all()
+
+    max_frame = 0
+    for row in compare_table.rows:
+        video_id = row[6]
+        video_info = utils.get_video(video_id)
+        max_frame = max(max_frame, video_info.frames_count)
+
+    frame_range_to.max = max_frame
+    frame_range_from.max = max_frame - 1
 
 
 @compare_btn.click
@@ -1002,8 +1046,16 @@ def compare_btn_clicked():
                 )
                 pbar.update(15)
 
+                # 6. get frame ranges
+                frame_from = 1
+                if frame_range_from_checkbox.is_checked():
+                    frame_from = frame_range_from.get_value()
+                frame_to = first_video_info.frames_count
+                if frame_range_to_checkbox.is_checked():
+                    frame_to = frame_range_to.get_value()
+
             with report_calculation_progress(
-                total=first_video_info.frames_count,
+                total=frame_to - frame_from + 1,
                 message="Calculating consensus report...",
             ) as pbar:
                 report, difference_geometries = calculate_exam_report(
@@ -1017,9 +1069,11 @@ def compare_btn_clicked():
                     iou_threshold=threshold,
                     progress=pbar,
                     segmentation_mode=segmentation_mode,
+                    frame_from=frame_from,
+                    frame_to=frame_to,
                 )
             with report_calculation_progress(
-                total=first_video_info.frames_count,
+                total=frame_to - frame_from + 1,
                 message="Saving consensus report...",
             ) as pbar:
                 pairs_comparisons_results[(first, second)] = ComparisonResult(
@@ -1036,6 +1090,7 @@ def compare_btn_clicked():
                     second_classes=list(second_classes),
                     report=report,
                     differences=difference_geometries,
+                    frame_range=[frame_from, frame_to],
                 )
             report_calculation_progress.show()
             score = utils.get_score(report)
@@ -1044,7 +1099,7 @@ def compare_btn_clicked():
             report_progress_current_pair_first.text = row_to_str(second)
             report_progress_current_pair_second.text = row_to_str(first)
             with report_calculation_progress(
-                total=second_video_info.frames_count,
+                total=frame_to - frame_from + 1,
                 message="Calculating consensus report...",
             ) as pbar:
                 report, difference_geometries = calculate_exam_report(
@@ -1058,9 +1113,11 @@ def compare_btn_clicked():
                     iou_threshold=threshold,
                     progress=pbar,
                     segmentation_mode=segmentation_mode,
+                    frame_from=frame_from,
+                    frame_to=frame_to,
                 )
             with report_calculation_progress(
-                total=second_video_info.frames_count,
+                total=frame_to - frame_from + 1,
                 message="Saving consensus report...",
             ) as pbar:
                 pairs_comparisons_results[(second, first)] = ComparisonResult(
@@ -1077,6 +1134,7 @@ def compare_btn_clicked():
                     second_classes=list(first_classes),
                     report=report,
                     differences=difference_geometries,
+                    frame_range=[frame_from, frame_to],
                 )
             report_calculation_progress.show()
             score = utils.get_score(report)
@@ -1175,6 +1233,7 @@ def result_table_clicked(datapoint):
         tags=comparison_result.tags,
         first_name=row_name,
         second_name=column_name,
+        frame_range=comparison_result.frame_range,
     )
 
     set_actions(comparison_result)
@@ -1261,6 +1320,7 @@ layout = Container(
                         description="Select classes that will be used for report calculation",
                         content=classes_whitelist_widget,
                     ),
+                    frame_ranges,
                     compare_btn,
                 ]
             ),
@@ -1273,6 +1333,8 @@ layout = Container(
                     report_progress_current_pair,
                     report_calculation_progress,
                     result_table,
+                    consensus_report_notification,
+                    consensus_report_error_notification,
                 ]
             ),
         ),
