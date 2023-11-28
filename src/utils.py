@@ -73,6 +73,8 @@ def get_annotators(videos_ids: List[int]):
             )
             for obj in ann.objects:
                 video_annotators[video_id].add(obj.labeler_login)
+                for tag in obj.tags:
+                    video_annotators[video_id].add(tag.labeler_login)
             for tag in ann.tags:
                 video_annotators[video_id].add(tag.labeler_login)
         annotators = annotators.union(video_annotators[video_id])
