@@ -286,7 +286,7 @@ def show_images(frame_n):
     labels = [
         sly.Label(geometry=fig.geometry, obj_class=fig.video_object.obj_class)
         for fig in gt_annotation.figures
-        if fig.frame_index == frame_n
+        if fig.frame_index == frame_n - 1
     ]
     gt_ann = sly.Annotation(frame_shape, labels=labels)
 
@@ -295,7 +295,7 @@ def show_images(frame_n):
     labels = [
         sly.Label(geometry=fig.geometry, obj_class=fig.video_object.obj_class)
         for fig in pred_annotation.figures
-        if fig.frame_index == frame_n
+        if fig.frame_index == frame_n - 1
     ]
     pred_ann = sly.Annotation(frame_shape, labels=labels)
 

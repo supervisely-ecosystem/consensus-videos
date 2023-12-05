@@ -583,8 +583,14 @@ def compute_metrics(
                         fn_key=FALSE_NEGATIVE,
                     )
 
-                gt_canvas = np.isin(seg_gt_effective_canvas, gt_class_indices)
-                pred_canvas = np.isin(seg_pred_effective_canvas, pred_class_indices)
+                gt_canvas = np.isin(
+                    seg_gt_effective_canvas,
+                    [gt_figure_idx_to_effective_mask_idx[i] for i in gt_class_indices],
+                )
+                pred_canvas = np.isin(
+                    seg_pred_effective_canvas,
+                    [pred_figure_idx_to_effective_mask_idx[i] for i in pred_class_indices],
+                )
                 error_canvas = gt_canvas != pred_canvas
 
                 # Pixel counters
