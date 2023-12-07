@@ -59,7 +59,6 @@ ALL_USERS = "All users"
 Row = namedtuple(
     typename="row",
     field_names=[
-        "index",
         "project_name",
         "project_id",
         "dataset_name",
@@ -89,6 +88,7 @@ class ComparisonResult:
         report,
         differences,
         frame_range,
+        score,
     ):
         first_name = ", ".join(str(p) for p in pair[0][2:])
         second_name = ", ".join(str(p) for p in pair[1][2:])
@@ -107,6 +107,7 @@ class ComparisonResult:
         self._report_path = self.save_report(report)
         self._differences_path = self.save_differences(differences)
         self.frame_range = frame_range
+        self.score = score
         try:
             self.error_message = report["error"]
         except (KeyError, TypeError):
@@ -167,6 +168,9 @@ class ComparisonResult:
         with open(self._report_path, "r") as f:
             return json.load(f)
 
+    def get_score(self):
+        return self.score
+
 
 class SelectedUser:
     def __init__(self):
@@ -203,6 +207,105 @@ class SelectedUser:
         self._user_login = user_login
         self._classes = classes
         self.update()
+
+
+class ResultsTable:
+    def __init__(self):
+        self.table = Table()
+        self.video_selector = Select(items=[])
+
+        self.video_selector.value_changed(self._fill_table)
+
+        self.widget = Container(
+            widgets=[
+                Field(
+                    content=self.video_selector,
+                    title="Video",
+                    description="Select video to show consensus report",
+                ),
+                self.table,
+            ]
+        )
+
+    def set(self, rows_pairs):
+        self.rows_pairs = rows_pairs
+        self.data = {}
+        first_video_id = None
+        for row_pair in self.rows_pairs:
+            video_id = row_pair[0].video_id
+            if first_video_id is None:
+                first_video_id = video_id
+            self.data.setdefault(video_id, []).append(row_pair)
+        self.video_selector.set(
+            items=[
+                Select.Item(video_id, row_pairs[0][0].video_name)
+                for video_id, row_pairs in self.data.items()
+            ]
+        )
+        self.video_selector.set_value(self.video_selector.get_items()[0].value)
+        self._fill_table(first_video_id)
+
+    def _get_table_header(self, row: Row):
+        return f"{row.project_name}, {row.dataset_name}, {row.video_name}"
+
+    def _get_result_table_data_json(self, rows_pairs: List[Tuple[Row, Row]]):
+        global pairs_comparisons_results
+        row = rows_pairs[0][0]
+        self.table_header = self._get_table_header(row)
+        first_rows = [row_pair[0] for row_pair in rows_pairs] + [
+            row_pair[1] for row_pair in rows_pairs
+        ]
+        second_rows = [row_pair[1] for row_pair in rows_pairs] + [
+            row_pair[0] for row_pair in rows_pairs
+        ]
+        columns = [self.table_header, *[row.annotator_login for row in second_rows]]
+        data = [[row.annotator_login, *["" for _ in range(len(second_rows))]] for row in first_rows]
+        for row_pair in rows_pairs:
+            score = pairs_comparisons_results[row_pair].get_score()
+            if isinstance(score, (int, float)):
+                score = round(score * 100, 2)
+            first_idx = first_rows.index(row_pair[0])
+            second_idx = second_rows.index(row_pair[1])
+            data[first_idx][second_idx + 1] = score
+            score = pairs_comparisons_results[row_pair[::-1]].get_score()
+            if isinstance(score, (int, float)):
+                score = round(score * 100, 2)
+            first_idx = first_rows.index(row_pair[1])
+            second_idx = second_rows.index(row_pair[0])
+            data[second_idx][first_idx + 1] = score
+
+        return {
+            "columns": columns,
+            "data": data,
+        }
+
+    def _fill_table(self, video_id):
+        row_pairs = self.data[video_id]
+        self.table.read_json(self._get_result_table_data_json(row_pairs))
+
+    def hide(self):
+        self.widget.hide()
+
+    def show(self):
+        self.widget.show()
+
+    def get_selected_pair(self):
+        cell_data = self.table.get_selected_cell(sly.app.StateJson())
+        if cell_data is None:
+            return None
+        column_name = cell_data["column_name"]
+        if column_name == self.table_header:
+            return None
+        row_name = cell_data["row"][self.table_header]
+        if row_name == column_name:
+            return None
+        video_id = self.video_selector.get_value()
+        for pair in self.data[video_id]:
+            if pair[0].annotator_login == row_name and pair[1].annotator_login == column_name:
+                return pair
+            if pair[0].annotator_login == column_name and pair[1].annotator_login == row_name:
+                return pair[::-1]
+        return None
 
 
 # Widgets
@@ -265,7 +368,7 @@ report_calculation_progress = Progress(
     "Calculating consensus report for pair: ", show_percents=False, hide_on_finish=False
 )
 report_calculation_progress.hide()
-result_table = Table()
+result_table = ResultsTable()
 consensus_report_text = Text(f"<h1>Consensus report</h1>", status="text")
 consensus_report_text.hide()
 selected_pair_first = SelectedUser()
@@ -426,7 +529,6 @@ actions_card.collapse()
 
 # global variables
 pairs_comparisons_results = {}
-name_to_row = {}
 
 
 @frame_range_from.value_changed
@@ -434,6 +536,7 @@ def frame_range_from_changed(value):
     frame_range_to.min = value
     if frame_range_to.value < value:
         frame_range_to.value = value
+    frame_range_from_checkbox.check()
 
 
 @frame_range_to.value_changed
@@ -441,18 +544,11 @@ def frame_range_to_changed(value):
     frame_range_from.max = value
     if frame_range_from.value > value:
         frame_range_from.value = value
+    frame_range_to_checkbox.check()
 
 
 def count_frames_for_actions(metric, passmark, result):
-    global name_to_row
-    cell_data = result_table.get_selected_cell(sly.app.StateJson())
-    if cell_data is None:
-        return 0
-    row_name = cell_data["row"][""]
-    column_name = cell_data["column_name"]
-    if column_name == "" or row_name == column_name:
-        return 0
-    pair = (name_to_row[row_name], name_to_row[column_name])
+    pair = result_table.get_selected_pair()
     comparison_result = pairs_comparisons_results[pair]
     comparison_result: ComparisonResult
     if comparison_result.error_message is not None:
@@ -476,13 +572,7 @@ def count_frames_for_actions(metric, passmark, result):
 
 
 def get_frames_for_actions(metric, passmark, result):
-    global name_to_row
-    cell_data = result_table.get_selected_cell(sly.app.StateJson())
-    row_name = cell_data["row"][""]
-    column_name = cell_data["column_name"]
-    if column_name == "" or row_name == column_name:
-        return []
-    pair = (name_to_row[row_name], name_to_row[column_name])
+    pair = result_table.get_selected_pair()
     comparison_result = pairs_comparisons_results[pair]
     comparison_result: ComparisonResult
     if comparison_result.error_message is not None:
@@ -612,15 +702,7 @@ def actions_lj_func(
 
 
 def get_selected_video_and_ann() -> Tuple[VideoInfo, VideoAnnotation]:
-    global name_to_row
-    cell_data = result_table.get_selected_cell(sly.app.StateJson())
-    if cell_data is None:
-        return None, None
-    row_name = cell_data["row"][""]
-    column_name = cell_data["column_name"]
-    if column_name == "" or row_name == column_name:
-        return None, None
-    pair = (name_to_row[row_name], name_to_row[column_name])
+    pair = result_table.get_selected_pair()
     comparison_result = pairs_comparisons_results[pair]
     ann = sly.VideoAnnotation.from_json(
         g.api.video.annotation.download(comparison_result.second_video_info.id),
@@ -712,25 +794,7 @@ actions_select_metric.value_changed(update_images_count)
 
 
 def row_to_str(row: Row):
-    return f"{row.index}. {row.project_name}, {row.dataset_name}, {row.video_name}, {row.annotator_login}"
-
-
-def get_result_table_data_json(first_rows: List[Row], second_rows: List[Row], pairs_scores: Dict):
-    first_rows_indexes = {row: idx for idx, row in enumerate(first_rows)}
-    second_rows_indexes = {row: idx for idx, row in enumerate(second_rows)}
-    data = [
-        [row_to_str(first_rows[i]), *["" for _ in range(len(second_rows))]]
-        for i in range(len(first_rows))
-    ]
-    for pair, score in pairs_scores.items():
-        first_idx = first_rows_indexes[pair[0]]
-        second_idx = second_rows_indexes[pair[1]]
-        if score != "Error":
-            data[first_idx][second_idx + 1] = round(score * 100, 2)
-        else:
-            data[first_idx][second_idx + 1] = "Error"
-
-    return {"columns": ["", *[row_to_str(row) for row in first_rows]], "data": data}
+    return f"{row.project_name}, {row.dataset_name}, {row.video_name}, {row.annotator_login}"
 
 
 def set_actions(comparison_result: ComparisonResult):
@@ -973,13 +1037,6 @@ def pop_row_btn_clicked():
 @compare_btn.click
 def compare_btn_clicked():
     global compare_table
-
-    rows = [
-        Row(i + 1, *r[1:]) for i, r in enumerate(compare_table.get_json_data()["raw_rows_data"])
-    ]
-    if len(rows) < 2:
-        return
-
     global result_table
     global report_layout
     global report_progress_current_pair_first
@@ -989,6 +1046,10 @@ def compare_btn_clicked():
     global pairs_comparisons_results
     global name_to_row
 
+    rows = [Row(*r[1:]) for i, r in enumerate(compare_table.get_json_data()["raw_rows_data"])]
+    if len(rows) < 2:
+        return
+
     result_table.hide()
     report_container.hide()
     report_progress_current_pair.show()
@@ -997,7 +1058,12 @@ def compare_btn_clicked():
     name_to_row = {row_to_str(row): row for row in rows}
     pairs_comparisons_results = {}
 
-    rows_pairs = [(rows[i], rows[j]) for i in range(len(rows)) for j in range(i + 1, len(rows))]
+    rows_pairs = [
+        (rows[i], rows[j])
+        for i in range(len(rows))
+        for j in range(i + 1, len(rows))
+        if rows[i].video_id == rows[j].video_id
+    ]
     threshold = threshold_input.get_value()
     tags_whitelist = [tm.name for tm in tags_whitelist_widget.get_selected_tag_metas()]
     classes_whitelist = [oc.name for oc in classes_whitelist_widget.get_selected_classes()]
@@ -1091,10 +1157,9 @@ def compare_btn_clicked():
                     report=report,
                     differences=difference_geometries,
                     frame_range=[frame_from, frame_to],
+                    score=utils.get_score(report),
                 )
             report_calculation_progress.show()
-            score = utils.get_score(report)
-            pair_scores[(first, second)] = score
 
             report_progress_current_pair_first.text = row_to_str(second)
             report_progress_current_pair_second.text = row_to_str(first)
@@ -1135,38 +1200,23 @@ def compare_btn_clicked():
                     report=report,
                     differences=difference_geometries,
                     frame_range=[frame_from, frame_to],
+                    score=utils.get_score(report),
                 )
             report_calculation_progress.show()
-            score = utils.get_score(report)
-            pair_scores[tuple((first, second)[::-1])] = score
-        else:
-            report_progress_current_pair_first.text = row_to_str(first)
-            report_progress_current_pair_second.text = row_to_str(second)
-            report = pairs_comparisons_results[(first, second)].get_report()
-            score = utils.get_score(report)
-            pair_scores[(first, second)] = score
 
-            report_progress_current_pair_first.text = row_to_str(second)
-            report_progress_current_pair_second.text = row_to_str(first)
-            report = pairs_comparisons_results[(second, first)].get_report()
-            score = utils.get_score(report)
-            pair_scores[(second, first)] = score
+    result_table.set(rows_pairs)
 
-    result_table.read_json(get_result_table_data_json(rows, rows, pair_scores))
     report_progress_current_pair.hide()
     report_calculation_progress.hide()
     result_table.show()
     consensus_report_notification.show()
 
 
-@result_table.click
+@result_table.table.click
 @sly.timeit
 def result_table_clicked(datapoint):
-    global name_to_row
-    row_name = datapoint.row[""]
-    column_name = datapoint.column_name
-
-    if column_name == "" or row_name == column_name:
+    pair = result_table.get_selected_pair()
+    if pair is None:
         return
 
     global consensus_report_error_notification
@@ -1177,7 +1227,6 @@ def result_table_clicked(datapoint):
     global consensus_report_details
 
     consensus_report_notification.hide()
-    pair = (name_to_row[row_name], name_to_row[column_name])
     comparison_result = pairs_comparisons_results[pair]
     comparison_result: ComparisonResult
     if comparison_result.error_message is not None:
@@ -1231,8 +1280,8 @@ def result_table_clicked(datapoint):
         diffs=comparison_result.get_differences(),
         classes=comparison_result.classes,
         tags=comparison_result.tags,
-        first_name=row_name,
-        second_name=column_name,
+        first_name=row_to_str(pair[0]),
+        second_name=row_to_str(pair[1]),
         frame_range=comparison_result.frame_range,
     )
 
@@ -1330,12 +1379,13 @@ layout = Container(
             description="Click on 'CALCULATE CONSENSUS' button to see comparison matrix. Value in a table cell is a consensus score for the pair",
             content=Container(
                 widgets=[
-                    report_progress_current_pair,
-                    report_calculation_progress,
-                    result_table,
+                    result_table.widget,
                     consensus_report_notification,
                     consensus_report_error_notification,
-                ]
+                    report_progress_current_pair,
+                    report_calculation_progress,
+                ],
+                gap=0,
             ),
         ),
         report_container,
