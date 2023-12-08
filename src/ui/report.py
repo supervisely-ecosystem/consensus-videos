@@ -1,4 +1,5 @@
 import copy
+import json
 import time
 
 import supervisely as sly
@@ -16,6 +17,8 @@ from supervisely.app.widgets import (
     Button,
     Switch,
     Flexbox,
+    Select,
+    Collapse,
 )
 from supervisely.app import DataJson
 import src.utils as utils
@@ -72,7 +75,44 @@ tags_stat_table_columns = [
 ]
 tags_stat_table = Table(columns=tags_stat_table_columns)
 tags_stat_last = Text()
-tags_stat = Card(title="TAGS", content=Container(widgets=[tags_stat_table, tags_stat_last], gap=5))
+
+tags_values_stat_table_columns = [
+    "Tag Value",
+    "GT Tags",
+    "Labeled Tags",
+    "Precision",
+    "Recall",
+    "F-measure",
+]
+tags_values_stat_table = Table(columns=tags_values_stat_table_columns)
+tags_values_stat_card = Card(
+    title="Tags values stats",
+    description="Click on a tags table row to see stats for each tag value",
+    content=tags_values_stat_table,
+    collapsable=True,
+)
+tags_values_stat_card.collapse()
+
+
+@tags_stat_table.click
+def tags_stat_table_click_cb(datapoint):
+    tag_name = datapoint.row["NAME"]
+    tags_values_stat_table.read_json(
+        {
+            "columns": tags_values_stat_table_columns,
+            "data": [
+                row
+                for row in get_tags_values_stat_table_rows(report_to_dict(current_report), tag_name)
+            ],
+        }
+    )
+    tags_values_stat_card.uncollapse()
+
+
+tags_stat = Card(
+    title="TAGS",
+    content=Container(widgets=[tags_stat_table, tags_stat_last, tags_values_stat_card], gap=5),
+)
 
 report_per_image_table_columns = [
     "FRAME #",
@@ -254,7 +294,10 @@ def report_to_dict(report):
                 "pred_frame_n": metric["pred_frame_n"]
             }
         d[metric["metric_name"]][metric["gt_frame_n"]][
-            (metric["class_gt"], metric["tag_name"])
+            (
+                metric["class_gt"],
+                metric["tag"] if isinstance(metric["tag"], str) else json.dumps(metric["tag"]),
+            )
         ] = metric["value"]
     return d
 
@@ -458,6 +501,40 @@ def get_tags_stat_table_row(report, tag_name):
         f'{int(metrics["tags-recall"]*metrics["tags-total-gt"])} of {metrics["tags-total-gt"]} ({round(metrics["tags-recall"]*100, 2)}%)',
         f'{round(metrics["tags-f1"]*100, 2)}%',
     ]
+
+
+def get_tags_values_stat_table_rows(report, tag_name):
+    def get_one_row(tag_name, tag_value):
+        metrics = {
+            "tags-total-gt": 0,
+            "tags-total-pred": 0,
+            "tags-precision": 1,
+            "tags-recall": 1,
+            "tags-f1": 1,
+        }
+        for metric_name in metrics.keys():
+            try:
+                metrics[metric_name] = report[metric_name][0][
+                    ("", json.dumps({"name": tag_name, "value": tag_value}))
+                ]
+            except KeyError:
+                pass
+        return [
+            f"{tag_value}",
+            metrics["tags-total-gt"],
+            metrics["tags-total-pred"],
+            f'{int(metrics["tags-precision"]*metrics["tags-total-pred"])} of {metrics["tags-total-pred"]} ({round(metrics["tags-precision"]*100, 2)}%)',
+            f'{int(metrics["tags-recall"]*metrics["tags-total-gt"])} of {metrics["tags-total-gt"]} ({round(metrics["tags-recall"]*100, 2)}%)',
+            f'{round(metrics["tags-f1"]*100, 2)}%',
+        ]
+
+    for t in report["tags-total-gt"][0]:
+        try:
+            t_json = json.loads(t[1])
+            if t_json["name"] == tag_name:
+                yield get_one_row(tag_name, t_json["value"])
+        except:
+            pass
 
 
 def get_average_f_measure_per_tags(report):
@@ -689,6 +766,22 @@ def render_report(
         f"<b>Tags score (average F-measure) {round(get_average_f_measure_per_tags(report)*100, 2)}%</b>",
         status="text",
     )
+
+    if len(tags) > 0:
+        tag_name = tags[0]
+        tags_values_stat_table.read_json(
+            {
+                "columns": tags_values_stat_table_columns,
+                "data": [row for row in get_tags_values_stat_table_rows(report, tag_name)],
+            }
+        )
+    else:
+        tags_values_stat_table.read_json(
+            {
+                "columns": tags_values_stat_table_columns,
+                "data": [],
+            }
+        )
 
     # set timeline
     timeline_select_frame.min = current_frame_range[0]

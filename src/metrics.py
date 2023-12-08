@@ -85,7 +85,7 @@ class MetricValue:
         self.class_gt = ""
         self.gt_frame_n = 0
         self.pred_frame_n = 0
-        self.tag_name = ""
+        self.tag = ""
 
     def to_json(self):
         return {
@@ -94,7 +94,7 @@ class MetricValue:
             "class_gt": self.class_gt,
             "gt_frame_n": self.gt_frame_n,
             "pred_frame_n": self.pred_frame_n,
-            "tag_name": self.tag_name,
+            "tag": self.tag,
         }
 
 
@@ -156,7 +156,7 @@ def _fill_metric_value(
     class_gt=None,
     gt_frame_n=None,
     pred_frame_n=None,
-    tag_name=None,
+    tag=None,
 ):
     metric_value.value = value
     metric_value.metric_name = name
@@ -166,8 +166,8 @@ def _fill_metric_value(
         metric_value.gt_frame_n = gt_frame_n
     if pred_frame_n is not None:
         metric_value.pred_frame_n = pred_frame_n
-    if tag_name is not None:
-        metric_value.tag_name = tag_name
+    if tag is not None:
+        metric_value.tag = tag
 
 
 def _add_matching_metrics(
@@ -177,7 +177,7 @@ def _add_matching_metrics(
     class_gt=None,
     gt_frame_n=None,
     pred_frame_n=None,
-    tag_name=None,
+    tag=None,
 ):
     gt_total_key = metric_name_config[TOTAL_GROUND_TRUTH]
     pred_total_key = metric_name_config[TOTAL_PREDICTIONS]
@@ -214,7 +214,7 @@ def _add_matching_metrics(
             class_gt=class_gt,
             gt_frame_n=gt_frame_n,
             pred_frame_n=pred_frame_n,
-            tag_name=tag_name,
+            tag=tag,
         )
 
     return result_values
@@ -255,11 +255,27 @@ def _maybe_add_average_metric(dest, metrics, metric_name, gt_frame_n=None, pred_
         return {}
 
 
-def add_tag_counts(dest_counters, tags_gt, tags_pred, tags_whitelist, tp_key, fp_key, fn_key):
+def add_tag_counts(
+    dest_counters,
+    dest_value_counters: dict,
+    tags_gt,
+    tags_pred,
+    tags_whitelist,
+    tp_key,
+    fp_key,
+    fn_key,
+):
     effective_tags_gt = set((tag.name, tag.value) for tag in tags_gt if tag.name in tags_whitelist)
     effective_tags_pred = set(
         (tag.name, tag.value) for tag in tags_pred if tag.name in tags_whitelist
     )
+    for name, value in effective_tags_pred - effective_tags_gt:
+        dest_value_counters.setdefault((name, value), _make_counters())[fp_key] += 1
+    for name, value in effective_tags_gt - effective_tags_pred:
+        dest_value_counters.setdefault((name, value), _make_counters())[fn_key] += 1
+    for name, value in effective_tags_gt & effective_tags_pred:
+        dest_value_counters.setdefault((name, value), _make_counters())[tp_key] += 1
+
     for name, _ in effective_tags_pred - effective_tags_gt:
         dest_counters[name][fp_key] += 1
     for name, _ in effective_tags_gt - effective_tags_pred:
@@ -286,6 +302,12 @@ def is_segmentation(figure: VideoFigure, segmentation_mode: bool):
         return False
     if type(figure.geometry) in SEGMENTATION_GEOMETRIES:
         return True
+
+
+def _tag_in_frame(tag: sly.VideoTag, frame_n):
+    if tag.frame_range is None:
+        return True
+    return tag.frame_range[0] <= frame_n <= tag.frame_range[1]
 
 
 def compute_metrics(
@@ -323,8 +345,20 @@ def compute_metrics(
         tag_counters = {
             tag_name: _make_counters() for tag_name in set(tags_whitelist) | set(obj_tags_whitelist)
         }
+        tag_value_counters = {}
         total_pixel_error = 0
         total_pixels = 0
+
+        add_tag_counts(
+            tag_counters,
+            tag_value_counters,
+            gt_video_ann.tags,
+            pred_video_ann.tags,
+            tags_whitelist,
+            tp_key=TRUE_POSITIVE,
+            fp_key=FALSE_POSITIVE,
+            fn_key=FALSE_NEGATIVE,
+        )
 
         if frame_from is None:
             frame_from = 1
@@ -334,19 +368,11 @@ def compute_metrics(
             image_class_counters = {class_gt: _make_counters() for class_gt in class_mapping}
             image_pixel_counters = {class_gt: _make_pixel_counters() for class_gt in class_mapping}
             image_tag_counters = {tag_name: _make_counters() for tag_name in tag_counters}
+            image_tag_value_counters = {}
 
             image_class_overall_counters = _make_counters()
             image_tag_overall_counters = _make_counters()
 
-            add_tag_counts(
-                image_tag_counters,
-                gt_video_ann.tags,
-                pred_video_ann.tags,
-                tags_whitelist,
-                tp_key=TRUE_POSITIVE,
-                fp_key=FALSE_POSITIVE,
-                fn_key=FALSE_NEGATIVE,
-            )
             frame_errors_canvas = np.zeros(video_shape, dtype=np.bool)
 
             gt_frame_figures = [
@@ -456,8 +482,21 @@ def compute_metrics(
                 for match in matching_results.matches:
                     add_tag_counts(
                         image_tag_counters,
-                        gt_frame_figures[gt_class_indices[match.idx_1]].video_object.tags,
-                        pred_frame_figures[pred_class_indices[match.idx_2]].video_object.tags,
+                        image_tag_value_counters,
+                        [
+                            tag
+                            for tag in gt_frame_figures[
+                                gt_class_indices[match.idx_1]
+                            ].video_object.tags
+                            if _tag_in_frame(tag, frame_n - 1)
+                        ],
+                        [
+                            tag
+                            for tag in pred_frame_figures[
+                                pred_class_indices[match.idx_2]
+                            ].video_object.tags
+                            if _tag_in_frame(tag, frame_n - 1)
+                        ],
                         obj_tags_whitelist,
                         tp_key=TRUE_POSITIVE,
                         fp_key=FALSE_POSITIVE,
@@ -466,7 +505,14 @@ def compute_metrics(
                 for fn_label_idx in matching_results.unmatched_indices_1:
                     add_tag_counts(
                         image_tag_counters,
-                        gt_frame_figures[gt_class_indices[fn_label_idx]].video_object.tags,
+                        image_tag_value_counters,
+                        [
+                            tag
+                            for tag in gt_frame_figures[
+                                gt_class_indices[fn_label_idx]
+                            ].video_object.tags
+                            if _tag_in_frame(tag, frame_n - 1)
+                        ],
                         TagCollection(),
                         obj_tags_whitelist,
                         tp_key=TRUE_POSITIVE,
@@ -476,8 +522,15 @@ def compute_metrics(
                 for fp_label_idx in matching_results.unmatched_indices_2:
                     add_tag_counts(
                         image_tag_counters,
+                        image_tag_value_counters,
                         TagCollection(),
-                        pred_frame_figures[pred_class_indices[fp_label_idx]].video_object.tags,
+                        [
+                            tag
+                            for tag in pred_frame_figures[
+                                pred_class_indices[fp_label_idx]
+                            ].video_object.tags
+                            if _tag_in_frame(tag, frame_n - 1)
+                        ],
                         obj_tags_whitelist,
                         tp_key=TRUE_POSITIVE,
                         fp_key=FALSE_POSITIVE,
@@ -553,8 +606,21 @@ def compute_metrics(
                 for match in matching_results.matches:
                     add_tag_counts(
                         image_tag_counters,
-                        gt_frame_figures[gt_class_indices[match.idx_1]].video_object.tags,
-                        pred_frame_figures[pred_class_indices[match.idx_2]].video_object.tags,
+                        image_tag_value_counters,
+                        [
+                            tag
+                            for tag in gt_frame_figures[
+                                gt_class_indices[match.idx_1]
+                            ].video_object.tags
+                            if _tag_in_frame(tag, frame_n - 1)
+                        ],
+                        [
+                            tag
+                            for tag in pred_frame_figures[
+                                pred_class_indices[match.idx_2]
+                            ].video_object.tags
+                            if _tag_in_frame(tag, frame_n - 1)
+                        ],
                         obj_tags_whitelist,
                         tp_key=TRUE_POSITIVE,
                         fp_key=FALSE_POSITIVE,
@@ -564,7 +630,14 @@ def compute_metrics(
                 for fn_label_idx in matching_results.unmatched_indices_1:
                     add_tag_counts(
                         image_tag_counters,
-                        gt_frame_figures[gt_class_indices[fn_label_idx]].video_object.tags,
+                        image_tag_value_counters,
+                        [
+                            tag
+                            for tag in gt_frame_figures[
+                                gt_class_indices[fn_label_idx]
+                            ].video_object.tags
+                            if _tag_in_frame(tag, frame_n - 1)
+                        ],
                         TagCollection(),
                         obj_tags_whitelist,
                         tp_key=TRUE_POSITIVE,
@@ -575,8 +648,15 @@ def compute_metrics(
                 for fp_label_idx in matching_results.unmatched_indices_2:
                     add_tag_counts(
                         image_tag_counters,
+                        image_tag_value_counters,
                         TagCollection(),
-                        pred_frame_figures[pred_class_indices[fp_label_idx]].video_object.tags,
+                        [
+                            tag
+                            for tag in pred_frame_figures[
+                                pred_class_indices[fp_label_idx]
+                            ].video_object.tags
+                            if _tag_in_frame(tag, frame_n - 1)
+                        ],
                         obj_tags_whitelist,
                         tp_key=TRUE_POSITIVE,
                         fp_key=FALSE_POSITIVE,
@@ -611,6 +691,10 @@ def compute_metrics(
             for tag_name, this_tag_counters in image_tag_counters.items():
                 _sum_update_counters(tag_counters[tag_name], this_tag_counters)
                 _sum_update_counters(image_tag_overall_counters, this_tag_counters)
+
+            for (tag_name, tag_value), this_tag_counters in image_tag_value_counters.items():
+                tag_value_counters.setdefault((tag_name, tag_value), _make_counters())
+                _sum_update_counters(tag_value_counters[(tag_name, tag_value)], this_tag_counters)
 
             image_overall_score_components = {}
 
@@ -677,7 +761,16 @@ def compute_metrics(
                     metric_name_config=_TAG_METRIC_NAMES,
                     gt_frame_n=frame_n,
                     pred_frame_n=frame_n,
-                    tag_name=tag_name,
+                    tag=tag_name,
+                )
+            for (tag_name, tag_value), this_tag_counters in tag_value_counters.items():
+                _add_matching_metrics(
+                    result,
+                    this_tag_counters,
+                    metric_name_config=_TAG_METRIC_NAMES,
+                    gt_frame_n=frame_n,
+                    pred_frame_n=frame_n,
+                    tag={"name": tag_name, "value": tag_value},
                 )
             image_tag_overall_metrics = _add_matching_metrics(
                 result,
@@ -743,13 +836,23 @@ def compute_metrics(
                 result,
                 this_tag_counters,
                 metric_name_config=_TAG_METRIC_NAMES,
-                tag_name=tag_name,
+                tag=tag_name,
             )
             for tag_name, this_tag_counters in tag_counters.items()
         }
         overall_score_components.update(
             _maybe_add_average_metric(result, per_tag_metrics.values(), TAGS_F1)
         )
+        per_tag_value_metrics = {
+            (tag_name, tag_value): _add_matching_metrics(
+                result,
+                this_tag_counters,
+                metric_name_config=_TAG_METRIC_NAMES,
+                tag={"name": tag_name, "value": tag_value},
+            )
+            for (tag_name, tag_value), this_tag_counters in tag_value_counters.items()
+        }
+        _maybe_add_average_metric(result, per_tag_value_metrics.values(), TAGS_F1)
 
         if len(overall_score_components) > 0:
             overall_score = np.mean(list(overall_score_components.values())).item()

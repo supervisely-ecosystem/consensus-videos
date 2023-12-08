@@ -87,7 +87,7 @@ def get_score(report: List[dict]):
         return "Error"
     for metric in report:
         if metric["metric_name"] == "overall-score":
-            if metric["class_gt"] == "" and metric["tag_name"] == "" and metric["gt_frame_n"] == 0:
+            if metric["class_gt"] == "" and metric["tag"] == "" and metric["gt_frame_n"] == 0:
                 return metric["value"]
     return 0
 
@@ -114,7 +114,15 @@ def filter_objects_by_user(
     second_login,
 ):
     first_filtered_objects = VideoObjectCollection(
-        [obj for obj in first_video_ann.objects if obj.labeler_login == first_login]
+        [
+            obj.clone(
+                tags=VideoTagCollection(
+                    [tag for tag in obj.tags if tag.labeler_login == first_login]
+                )
+            )
+            for obj in first_video_ann.objects
+            if obj.labeler_login == first_login
+        ]
     )
     first_filtered_frames = FrameCollection()
     for frame in first_video_ann.frames:
@@ -131,7 +139,15 @@ def filter_objects_by_user(
     )
 
     second_filtered_objects = VideoObjectCollection(
-        [obj for obj in second_video_ann.objects if obj.labeler_login == second_login]
+        [
+            obj.clone(
+                tags=VideoTagCollection(
+                    [tag for tag in obj.tags if tag.labeler_login == second_login]
+                )
+            )
+            for obj in second_video_ann.objects
+            if obj.labeler_login == second_login
+        ]
     )
     second_filtered_frames = FrameCollection()
     for frame in second_video_ann.frames:

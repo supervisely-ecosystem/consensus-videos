@@ -1089,7 +1089,7 @@ def compare_btn_clicked():
                 second_video_ann = utils.get_video_ann(second.video_id)
                 pbar.update(14)
 
-                # 3. filter annotations objects by user
+                # 3. filter annotations objects and tags by user
                 first_video_ann, second_video_ann = utils.filter_objects_by_user(
                     first_video_ann,
                     second_video_ann,
