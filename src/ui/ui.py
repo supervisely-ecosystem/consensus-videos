@@ -549,6 +549,8 @@ def frame_range_to_changed(value):
 
 def count_frames_for_actions(metric, passmark, result):
     pair = result_table.get_selected_pair()
+    if pair is None: 
+        return
     comparison_result = pairs_comparisons_results[pair]
     comparison_result: ComparisonResult
     if comparison_result.error_message is not None:
@@ -573,6 +575,8 @@ def count_frames_for_actions(metric, passmark, result):
 
 def get_frames_for_actions(metric, passmark, result):
     pair = result_table.get_selected_pair()
+    if pair is None: 
+        return
     comparison_result = pairs_comparisons_results[pair]
     comparison_result: ComparisonResult
     if comparison_result.error_message is not None:
@@ -703,6 +707,8 @@ def actions_lj_func(
 
 def get_selected_video_and_ann() -> Tuple[VideoInfo, VideoAnnotation]:
     pair = result_table.get_selected_pair()
+    if pair is None: 
+        return
     comparison_result = pairs_comparisons_results[pair]
     ann = sly.VideoAnnotation.from_json(
         g.api.video.annotation.download(comparison_result.second_video_info.id),
@@ -1385,7 +1391,7 @@ layout = Container(
                     report_progress_current_pair,
                     report_calculation_progress,
                 ],
-                gap=0,
+                gap=5,
             ),
         ),
         report_container,
