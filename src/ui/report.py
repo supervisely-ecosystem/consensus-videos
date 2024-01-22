@@ -377,7 +377,7 @@ def show_images(frame_n):
 
 report_per_image_images = GridGallery(3, enable_zoom=True, sync_views=True, fill_rectangle=False)
 report_per_image = Card(
-    title="REPORT PER FAME",
+    title="REPORT PER FRAME",
     description="Set filters to see frames with errors and click on the timeline to see the difference",
     content=Container(
         widgets=[
