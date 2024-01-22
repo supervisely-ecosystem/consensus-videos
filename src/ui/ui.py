@@ -29,6 +29,7 @@ from supervisely.app.widgets import (
     Editor,
     VideoThumbnail,
 )
+from supervisely.io.exception_handlers import handle_exception
 
 import src.globals as g
 import src.utils as utils
@@ -708,7 +709,7 @@ def actions_lj_func(
 def get_selected_video_and_ann() -> Tuple[VideoInfo, VideoAnnotation]:
     pair = result_table.get_selected_pair()
     if pair is None: 
-        return
+        raise RuntimeError("No pair selected. Please, click on compare table cell")
     comparison_result = pairs_comparisons_results[pair]
     ann = sly.VideoAnnotation.from_json(
         g.api.video.annotation.download(comparison_result.second_video_info.id),
@@ -729,7 +730,7 @@ def actions_run():
         frames = get_frames_for_actions(metric, passmark, result)
         video_info, video_ann = get_selected_video_and_ann()
         if video_info is None:
-            return
+            raise RuntimeError("No video selected")
         if action == "assign_tag":
             actions_progress.show()
             tag_meta, tag = get_tag_settings()
@@ -771,9 +772,16 @@ def actions_run():
             actions_total.show()
         else:
             raise RuntimeError("Unknown action")
-    except Exception:
+    except Exception as e:
+        handled_exc = handle_exception(e)
+        if handled_exc:
+            title = handled_exc.title
+            msg = handled_exc.get_message_for_modal_window()
+        else:
+            title = "Error occured while performing action."
+            msg = f"Error: {e}"
         sly.logger.error("Error occured while performing action", exc_info=traceback.format_exc())
-        sly.app.show_dialog("Error", "Error occured while performing action")
+        sly.app.show_dialog(title, msg, "error")
     finally:
         actions_progress.hide()
 
