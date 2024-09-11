@@ -1,27 +1,23 @@
 {
-    "version": "2.0.0",
-    "name": "Labeling Consensus for Videos",
-    "description": "Compare annotations of multiple labelers",
-    "entrypoint": "python -m uvicorn src.main:app --host 0.0.0.0 --port 8000",
-    "headless": false,
-    "categories": [
-        "videos",
-        "visualization",
-        "exploration",
-        "statistics",
-        "visualization stats",
-        "collaboration"
-    ],
-    "docker_image": "supervisely/collaboration:6.73.4",
-    "instance_version": "6.8.73",
-    "context_menu": {
-        "target": [
-            "videos_project",
-            "videos_dataset",
-            "ecosystem"
-        ]
-    },
-    "icon": "https://github.com/supervisely-ecosystem/consensus-videos/assets/115161827/17d8b364-b873-4453-9ba3-3ce74cf519db",
-    "icon_cover": true,
-    "poster": "https://github.com/supervisely-ecosystem/consensus-videos/assets/115161827/12273aba-e34e-47ff-8825-5c21c8aae903"
+	"version": "2.0.0",
+	"name": "Labeling Consensus for Videos",
+	"description": "Compare annotations of multiple labelers",
+	"entrypoint": "python -m uvicorn src.main:app --host 0.0.0.0 --port 8000",
+	"headless": false,
+	"categories": [
+		"videos",
+		"visualization",
+		"exploration",
+		"statistics",
+		"visualization stats",
+		"collaboration"
+	],
+	"docker_image": "supervisely/collaboration:6.73.182",
+	"instance_version": "6.11.10",
+	"context_menu": {
+		"target": ["videos_project", "videos_dataset", "ecosystem"]
+	},
+	"icon": "https://github.com/supervisely-ecosystem/consensus-videos/assets/115161827/17d8b364-b873-4453-9ba3-3ce74cf519db",
+	"icon_cover": true,
+	"poster": "https://github.com/supervisely-ecosystem/consensus-videos/assets/115161827/12273aba-e34e-47ff-8825-5c21c8aae903"
 }

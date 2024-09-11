@@ -550,7 +550,7 @@ def frame_range_to_changed(value):
 
 def count_frames_for_actions(metric, passmark, result):
     pair = result_table.get_selected_pair()
-    if pair is None: 
+    if pair is None:
         return
     comparison_result = pairs_comparisons_results[pair]
     comparison_result: ComparisonResult
@@ -576,7 +576,7 @@ def count_frames_for_actions(metric, passmark, result):
 
 def get_frames_for_actions(metric, passmark, result):
     pair = result_table.get_selected_pair()
-    if pair is None: 
+    if pair is None:
         return
     comparison_result = pairs_comparisons_results[pair]
     comparison_result: ComparisonResult
@@ -708,7 +708,7 @@ def actions_lj_func(
 
 def get_selected_video_and_ann() -> Tuple[VideoInfo, VideoAnnotation]:
     pair = result_table.get_selected_pair()
-    if pair is None: 
+    if pair is None:
         raise RuntimeError("No pair selected. Please, click on compare table cell")
     comparison_result = pairs_comparisons_results[pair]
     ann = sly.VideoAnnotation.from_json(
@@ -1014,6 +1014,8 @@ def add_to_compare_btn_clicked():
 
 @pop_row_btn.click
 def pop_row_btn_clicked():
+    if len(compare_table.rows) == 0:
+        return
     selected_row = compare_table.get_selected_row()
     data = compare_table.get_json_data()
     data["raw_rows_data"] = [row for row in data["raw_rows_data"] if row != selected_row]
